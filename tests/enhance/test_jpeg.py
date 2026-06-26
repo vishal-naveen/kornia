@@ -86,13 +86,27 @@ class TestDiffJPEG(BaseTester):
         assert img_jpeg is not None
         assert img_jpeg.shape == img.shape
 
+    def test_keyword_arg_image_rgb(self, device, dtype) -> None:
+        """Regression test for https://github.com/kornia/kornia/issues/3745.
+
+        perform_keep_shape_image previously shadowed the wrapped function's first-parameter name,
+        so calling jpeg_codec_differentiable(image_rgb=...) raised a TypeError at runtime.
+        """
+        B, H, W = 2, 32, 32
+        img = torch.rand(B, 3, H, W, device=device, dtype=dtype)
+        jpeg_quality = torch.randint(low=0, high=100, size=(B,), device=device, dtype=dtype)
+        # Must not raise; image_rgb= is the documented keyword name for this function
+        img_jpeg = kornia.enhance.jpeg_codec_differentiable(image_rgb=img, jpeg_quality=jpeg_quality)
+        assert img_jpeg is not None
+        assert img_jpeg.shape == img.shape
+
     def test_exception(self, device, dtype) -> None:
         """Test exceptions (non-tensor input, wrong JPEG quality shape, wrong img shape, and wrong QT shape.)"""
         with pytest.raises(TypeError) as errinfo:
             B = 2
             jpeg_quality = torch.randint(low=0, high=100, size=(B,), device=device, dtype=dtype)
             kornia.enhance.jpeg_codec_differentiable(1904.0, jpeg_quality)
-        assert "Input input type is not a torch.Tensor" in str(errinfo.value)
+        assert "Input type is not a torch.Tensor" in str(errinfo.value)
 
         from kornia.core.exceptions import TypeCheckError
 

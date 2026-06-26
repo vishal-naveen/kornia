@@ -376,3 +376,17 @@ class TestNormalizeMinMax(BaseTester):
 
         # Verify shape is preserved
         assert out.shape == input_shape
+
+    def test_keyword_arg_x(self, device, dtype):
+        # Regression test for https://github.com/kornia/kornia/issues/3745
+        # The perform_keep_shape_image decorator previously shadowed the first-parameter
+        # name with its own ``input`` variable, so calling normalize_min_max(x=tensor)
+        # raised "missing 1 required positional argument: 'input'".
+        x = torch.tensor([[[[0.0, 1.0, 3.0], [-1.0, 4.0, 3.0], [9.0, 5.0, 2.0]]]], device=device, dtype=dtype)
+        expected = torch.tensor(
+            [[[[-0.8, -0.6, -0.2], [-1.0, 0.0, -0.2], [1.0, 0.2, -0.4]]]], device=device, dtype=dtype
+        )
+        # Call using the documented keyword name ``x=`` - must not raise
+        out = kornia.enhance.normalize_min_max(x=x, min_val=-1.0, max_val=1.0)
+        assert out.shape == x.shape
+        self.assert_close(out, expected, low_tolerance=True)

@@ -16,6 +16,7 @@
 #
 
 
+import inspect
 from functools import wraps
 from typing import Any, Callable, List, Optional
 
@@ -309,18 +310,31 @@ def perform_keep_shape_image(f: Callable[..., torch.Tensor]) -> Callable[..., to
     It works by first viewing the image as `(B, C, H, W)`, applying the function and re-viewing the image as original
     shape.
     """
+    # Capture the name of the first parameter of the wrapped function at decoration time so that
+    # callers can pass the tensor by its documented keyword name (e.g. ``x=`` for
+    # ``normalize_min_max`` or ``image_rgb=`` for ``jpeg_codec_differentiable``).
+    first_param = next(iter(inspect.signature(f).parameters))
 
     @wraps(f)
-    def _wrapper(input: torch.Tensor, *args: Any, **kwargs: Any) -> torch.Tensor:
-        if not isinstance(input, torch.Tensor):
-            raise TypeError(f"Input input type is not a torch.Tensor. Got {type(input)}")
+    def _wrapper(*args: Any, **kwargs: Any) -> torch.Tensor:
+        if args:
+            tensor = args[0]
+            rest_args = args[1:]
+        elif first_param in kwargs:
+            tensor = kwargs.pop(first_param)
+            rest_args = ()
+        else:
+            raise TypeError(f"{f.__name__}() missing 1 required positional argument: '{first_param}'")
 
-        if input.shape.numel() == 0:
+        if not isinstance(tensor, torch.Tensor):
+            raise TypeError(f"Input type is not a torch.Tensor. Got {type(tensor)}")
+
+        if tensor.shape.numel() == 0:
             raise ValueError("Invalid input tensor, it is empty.")
 
-        input_shape = input.shape
-        input = _to_bchw(input)  # view input as (B, C, H, W)
-        output = f(input, *args, **kwargs)
+        input_shape = tensor.shape
+        tensor = _to_bchw(tensor)  # view input as (B, C, H, W)
+        output = f(tensor, *rest_args, **kwargs)
         if len(input_shape) == 3:
             output = output[0]
 
@@ -341,18 +355,29 @@ def perform_keep_shape_video(f: Callable[..., torch.Tensor]) -> Callable[..., to
     It works by first viewing the image as `(B, C, D, H, W)`, applying the function and re-viewing the image as original
     shape.
     """
+    # Capture the name of the first parameter so callers can pass the tensor by its documented keyword name.
+    first_param = next(iter(inspect.signature(f).parameters))
 
     @wraps(f)
-    def _wrapper(input: torch.Tensor, *args: Any, **kwargs: Any) -> torch.Tensor:
-        if not isinstance(input, torch.Tensor):
-            raise TypeError(f"Input input type is not a torch.Tensor. Got {type(input)}")
+    def _wrapper(*args: Any, **kwargs: Any) -> torch.Tensor:
+        if args:
+            tensor = args[0]
+            rest_args = args[1:]
+        elif first_param in kwargs:
+            tensor = kwargs.pop(first_param)
+            rest_args = ()
+        else:
+            raise TypeError(f"{f.__name__}() missing 1 required positional argument: '{first_param}'")
 
-        if input.numel() == 0:
+        if not isinstance(tensor, torch.Tensor):
+            raise TypeError(f"Input type is not a torch.Tensor. Got {type(tensor)}")
+
+        if tensor.numel() == 0:
             raise ValueError("Invalid input tensor, it is empty.")
 
-        input_shape = input.shape
-        input = _to_bcdhw(input)  # view input as (B, C, D, H, W)
-        output = f(input, *args, **kwargs)
+        input_shape = tensor.shape
+        tensor = _to_bcdhw(tensor)  # view input as (B, C, D, H, W)
+        output = f(tensor, *rest_args, **kwargs)
         if len(input_shape) == 4:
             output = output[0]
 
