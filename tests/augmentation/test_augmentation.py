@@ -765,6 +765,10 @@ class TestRandomRotation90(CommonTests):
     def param_set(self, request):
         return request.param
 
+    def test_dynamo(self, device, dtype, torch_optimizer):
+        # The full forward, including the overridden generate_parameters, must compile without a graph break.
+        _assert_dynamo_fullgraph(lambda: RandomRotation90((-3, 3), p=1.0), self, device, dtype)
+
     @pytest.mark.parametrize(
         "input_shape,expected_output_shape",
         [((3, 4, 5), (1, 3, 4, 5)), ((2, 3, 4, 5), (2, 3, 4, 5))],

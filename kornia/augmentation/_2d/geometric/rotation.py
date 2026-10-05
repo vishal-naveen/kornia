@@ -162,7 +162,7 @@ class RandomRotation90(GeometricAugmentationBase2D):
     Convention:
         - See :class:`~kornia.augmentation.GeometricAugmentationBase2D` for coordinates, defaults and inverse.
         - a positive rounded ``times`` rotates the displayed image counter-clockwise by ``times * 90`` degrees.
-        - ``times`` is sampled from a continuous uniform range and rounded, and a non-square image keeps its
+        - ``times`` is sampled uniformly over the integers in the given range, and a non-square image keeps its
           ``(H, W)`` shape (`#4409 <https://github.com/kornia/kornia/issues/4409>`_).
 
     .. note::
@@ -209,6 +209,13 @@ class RandomRotation90(GeometricAugmentationBase2D):
         self._param_generator = rg.PlainUniformGenerator((times, "times", 0.0, (-3, 3)))
 
         self.flags = {"resample": Resample.get(resample), "align_corners": align_corners}
+
+    def generate_parameters(self, batch_shape: tuple[int, ...]) -> dict[str, torch.Tensor]:
+        params = super().generate_parameters(batch_shape)
+        low, high = self._param_generator.times.to(params["times"])
+        unit = (params["times"] - low) / (high - low).clamp_min(1e-6)
+        params["times"] = (low + torch.floor(unit * (high - low + 1))).clamp(max=high)
+        return params
 
     def compute_transformation(
         self, input: torch.Tensor, params: dict[str, torch.Tensor], flags: dict[str, Any]

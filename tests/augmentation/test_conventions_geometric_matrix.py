@@ -201,13 +201,17 @@ class TestConventionGeometricMatrices(BaseTester):
         assert rotation[0, 0].argmax().item() == 2 * 7 + 1
         assert affine[0, 0].argmax().item() == 4 * 7 + 5
 
-    def test_wart_random_rotation90_continuously_samples_then_rounds_4409(self, device, dtype):
-        augmentation = K.RandomRotation90((0, 1), p=1.0)
+    def test_convention_random_rotation90_samples_times_uniformly_4409(self, device, dtype):
         torch.manual_seed(1)
-        params = augmentation.forward_parameters((64, 1, 5, 7))
+        params = K.RandomRotation90((-1, 1), p=1.0).forward_parameters((6000, 1, 5, 7))
+        assert torch.equal(params["times"], params["times"].round())
+        counts = torch.stack([(params["times"] == t).sum() for t in (-1.0, 0.0, 1.0)])
+        assert counts.sum() == 6000
+        assert (counts > 1700).all() and (counts < 2300).all()
 
-        assert ((params["times"] >= 0) & (params["times"] <= 1)).all()
-        assert not torch.equal(params["times"], params["times"].round())
+        augmentation = K.RandomRotation90((0, 1), p=1.0)
+        params = augmentation.forward_parameters((64, 1, 5, 7))
+        assert set(params["times"].tolist()) == {0.0, 1.0}
 
         x = torch.zeros(2, 1, 7, 7, device=device, dtype=dtype)
         x[..., 1, 4] = 1
