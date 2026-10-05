@@ -83,9 +83,8 @@ class RandomCutMixV2(MixAugmentationBaseV2):
           (`#4425 <https://github.com/kornia/kornia/issues/4425>`_): ``_params["batch_prob"]`` is all ones or all zeros,
           and every row and mix of a selected batch receives a cut, though self-pairing or a zero-sized cut can
           leave a row unchanged. With ``same_on_batch=False`` each row and mix draws its own cut size and placement;
-          ``same_on_batch=True`` shares one geometry, and with ``num_mix > 1`` one pairing too, so every mix
-          repeats the first cut while the labels credit the donor once per mix
-          (`#4805 <https://github.com/kornia/kornia/issues/4805>`_). At ``p=0`` the image is unchanged and each
+          ``same_on_batch=True`` shares one geometry across the rows of a mix, while each mix still draws its
+          own geometry and pairing. At ``p=0`` the image is unchanged and each
           class row contains the original label twice with lambda zero.
 
     Note:

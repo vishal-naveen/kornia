@@ -485,26 +485,27 @@ class TestMixConventions(BaseTester):
             torch.manual_seed(seed)
             shared = K.RandomCutMixV2(p=1.0, num_mix=2, same_on_batch=True, use_correct_lambda=True)
             crop_src = shared.forward_parameters(shape)["crop_src"]
-            self.assert_close(crop_src, crop_src[0, 0].expand_as(crop_src), rtol=0, atol=0)
+            self.assert_close(crop_src, crop_src[:, :1].expand_as(crop_src), rtol=0, atol=0)
             independent = K.RandomCutMixV2(p=1.0, num_mix=2, same_on_batch=False, use_correct_lambda=True)
             heights, widths = infer_bbox_shape(independent.forward_parameters(shape)["crop_src"].flatten(0, 1))
             assert heights.unique().numel() > 1
             assert widths.unique().numel() > 1
 
     @pytest.mark.device_agnostic
-    def test_wart_cutmix_same_on_batch_repeats_one_cut_per_mix_4805(self):
-        # #4805: with same_on_batch=True every mix repeats the first cut from the same donor, yet each mix is
-        # labelled. Flips when the mixes differ or collapse to one, i.e. when the labels match the pixels.
-        torch.manual_seed(0)
+    def test_convention_cutmix_same_on_batch_draws_each_mix_4805(self):
+        # #4805: with same_on_batch=True each mix draws its own pairing and cut, so the labels of one mix are not
+        # a copy of another's. Rows of one mix still share their geometry.
         image = torch.arange(4.0).view(4, 1, 1, 1).expand(4, 1, 8, 8).clone()  # row i is filled with i
-        aug = K.RandomCutMixV2(
-            num_mix=2, same_on_batch=True, p=1.0, use_correct_lambda=True, data_keys=["input", "class"]
-        )
-        output, mixed = aug(image, torch.tensor([0, 1, 2, 3]))
-        assert mixed.shape[0] == 2
-        assert torch.equal(mixed[0], mixed[1])
-        replaced = (output[:, 0] != image[:, 0]).float().mean((-2, -1))
-        self.assert_close(replaced, 1 - mixed[0, :, 2])  # one cut's area, while two mixes credit the donor
+        pairs_differ = crops_differ = False
+        for seed in range(20):
+            torch.manual_seed(seed)
+            aug = K.RandomCutMixV2(num_mix=2, same_on_batch=True, p=1.0, use_correct_lambda=True)
+            params = aug.forward_parameters(image.shape)
+            self.assert_close(params["crop_src"], params["crop_src"][:, :1].expand_as(params["crop_src"]))
+            pairs_differ |= not torch.equal(params["mix_pairs"][0], params["mix_pairs"][1])
+            crops_differ |= not torch.equal(params["crop_src"][0], params["crop_src"][1])
+        assert pairs_differ
+        assert crops_differ
 
     @pytest.mark.device_agnostic
     def test_convention_cutmix_placement_is_drawn_per_cut_4712(self):

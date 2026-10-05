@@ -22,7 +22,6 @@ from torch.distributions import Bernoulli, Beta, Uniform
 
 from kornia.augmentation.random_generator.base import RandomGeneratorBase
 from kornia.augmentation.utils import (
-    _adapted_rsampling,
     _adapted_sampling,
     _check_positive_int_or_traced,
     _common_param_check,
@@ -113,6 +112,15 @@ class CutmixGenerator(RandomGeneratorBase):
             validate_args=False,
         )
 
+    def _sample_per_mix(
+        self, dist: torch.distributions.Distribution, batch_size: int, same_on_batch: bool, reparameterized: bool
+    ) -> torch.Tensor:
+        """Draw ``num_mix * batch_size`` values; ``same_on_batch`` shares one draw across the rows of each mix."""
+        draw = dist.rsample if reparameterized else dist.sample
+        if same_on_batch:
+            return draw(torch.Size((self.num_mix,))).repeat_interleave(batch_size)
+        return draw(torch.Size((batch_size * self.num_mix,)))
+
     def forward(self, batch_shape: Tuple[int, ...], same_on_batch: bool = False) -> Dict[str, torch.Tensor]:
         batch_size = batch_shape[0]
         height = batch_shape[-2]
@@ -130,16 +138,14 @@ class CutmixGenerator(RandomGeneratorBase):
             }
 
         with torch.no_grad():
-            batch_probs: torch.Tensor = _adapted_sampling(
-                (batch_size * self.num_mix,), self.prob_sampler, same_on_batch
-            )
+            batch_probs: torch.Tensor = self._sample_per_mix(self.prob_sampler, batch_size, same_on_batch, False)
             mix_pairs: torch.Tensor = (
-                _adapted_sampling((self.num_mix, batch_size), self.pair_sampler, same_on_batch)
+                _adapted_sampling((self.num_mix, batch_size), self.pair_sampler, False)
                 .to(device=_device, dtype=_dtype)
                 .argsort(dim=1)
             )
 
-        cutmix_betas: torch.Tensor = _adapted_rsampling((batch_size * self.num_mix,), self.beta_sampler, same_on_batch)
+        cutmix_betas: torch.Tensor = self._sample_per_mix(self.beta_sampler, batch_size, same_on_batch, True)
 
         # Note: torch.clamp does not accept torch.Tensor, cutmix_betas.clamp(cut_size[0], cut_size[1]) throws:
         # Argument 1 to "clamp" of "_TensorBase" has incompatible type "torch.Tensor"; expected "float"
@@ -149,19 +155,14 @@ class CutmixGenerator(RandomGeneratorBase):
         cut_height = (cutmix_rate * height).floor().to(device=_device, dtype=_dtype)
         cut_width = (cutmix_rate * width).floor().to(device=_device, dtype=_dtype)
 
-        if same_on_batch:
-            cut_height = cut_height[0]
-            cut_width = cut_width[0]
-
-        # One start position per cut, like the sizes above; with same_on_batch the helper repeats a single draw.
+        # One start position per cut, like the sizes above; with same_on_batch each mix repeats a single draw.
         # Legal starts run 0 .. side - cut_side inclusive; the clamp only guards a u -> 1 float round-up.
-        _gen_shape = (batch_size * self.num_mix,)
-        x_start = _adapted_rsampling(_gen_shape, self.rand_sampler, same_on_batch).to(device=_device, dtype=_dtype) * (
-            width - cut_width + 1
-        )
-        y_start = _adapted_rsampling(_gen_shape, self.rand_sampler, same_on_batch).to(device=_device, dtype=_dtype) * (
-            height - cut_height + 1
-        )
+        x_start = self._sample_per_mix(self.rand_sampler, batch_size, same_on_batch, True).to(
+            device=_device, dtype=_dtype
+        ) * (width - cut_width + 1)
+        y_start = self._sample_per_mix(self.rand_sampler, batch_size, same_on_batch, True).to(
+            device=_device, dtype=_dtype
+        ) * (height - cut_height + 1)
         x_start = torch.minimum(x_start.floor(), width - cut_width)
         y_start = torch.minimum(y_start.floor(), height - cut_height)
 

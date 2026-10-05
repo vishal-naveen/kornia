@@ -1,0 +1,1 @@
+Fixed `RandomCutMixV2` with `same_on_batch=True` and `num_mix > 1` repeating the first cut and pairing in every mix, so the returned labels credited the same donor once per mix while the image showed a single cut. Each mix now draws its own geometry and pairing, shared across the rows of that mix.
